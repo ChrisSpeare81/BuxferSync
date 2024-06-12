@@ -17,7 +17,8 @@ public class CsvTransfer {
     public List<TransactionBean> getCsvList() {
 
         if (csvList != null) return csvList;
-        return new ArrayList<TransactionBean>();
+
+        return new ArrayList<>();
 
     }
 

@@ -5,7 +5,7 @@ import lombok.Getter;
 @Getter
 public class BuxferAccount {
 
-    Integer id;
+    String id;
 
     String name;
 

@@ -2,48 +2,70 @@ package BuxferSyncer.Pojos;
 
 import lombok.Getter;
 
-import java.util.ArrayList;
 import java.util.regex.Pattern;
 
 public class Transaction {
 
-    private final ArrayList<Pattern> regexs;
-
-    @Getter
-    private final String type;
+    private final Pattern regex;
 
     @Getter
     private final String description;
 
-    public Transaction(ArrayList<String> regexStrings, String type, String description) {
+    @Getter
+    private final String tags;
 
-         regexs = new ArrayList<Pattern>();
+    @Getter
+    private final String sourceAccount;
 
-        regexStrings.forEach(regex -> {
+    @Getter
+    private final String targetAccount;
 
-            regexs.add(Pattern.compile(regex, Pattern.CASE_INSENSITIVE));
+    @Getter
+    private final TransactionType transactionType;
 
-        });
+    @Getter
+    private final Boolean isCreditOnly;
 
+    public Transaction(String regex, String description, String tags, TransactionType type) {
 
-        this.type = type;
-        this.description = description;
+        this(regex, description, tags, type, null, null, false);
 
     }
 
-    public boolean testDescription(String description) {
+    public Transaction(String regex, String description, String tags, TransactionType type, String sourceAccount,
+                       String targetAccount, boolean checkCredit) {
 
-        for (Pattern pattern : regexs) {
+        this.regex = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+        this.description = description;
+        this.tags = tags;
+        this.transactionType = type;
+        this.sourceAccount = sourceAccount;
+        this.targetAccount = targetAccount;
+        this.isCreditOnly = checkCredit;
 
-            if (pattern.matcher(description).matches()) {
+    }
 
-                return true;
+    public boolean checkMatches(TransactionType type, String description) {
 
-            }
+        return type == transactionType && regex.matcher(description).matches();
 
-        }
+    }
 
-        return false;
+    public boolean isExpense() {
+
+        return transactionType == TransactionType.EXPENSE;
+
+    }
+
+    public boolean isIncome() {
+
+        return transactionType == TransactionType.INCOME;
+
+    }
+
+    public boolean isTransfer() {
+
+        return transactionType == TransactionType.TRANSFER;
 
     }
 
