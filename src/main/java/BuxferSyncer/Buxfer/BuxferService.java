@@ -3,6 +3,7 @@ package BuxferSyncer.Buxfer;
 import BuxferSyncer.Buxfer.Account.BuxferAccount;
 import BuxferSyncer.Buxfer.Account.BuxferAccountResponse;
 import BuxferSyncer.Buxfer.DeleteTransaction.DeleteTransactionResponse;
+import BuxferSyncer.Buxfer.ClearTransaction.ClearBuxferTransactionResponse;
 import BuxferSyncer.Buxfer.NewTransaction.NewBuxferTransaction;
 import BuxferSyncer.Buxfer.NewTransaction.NewBuxferTransactionResponse;
 import BuxferSyncer.Buxfer.Token.BuxferTokenResponse;
@@ -26,23 +27,19 @@ public class BuxferService {
 
     private static final String API_BASE_URL = "https://www.buxfer.com/api/";
 
-    private final String username = "cspeare81@googlemail.com";
-
-    private final String password = "A9Y4EheKr3Yn";
-
     private String token;
 
     private HashMap<String, BuxferAccount> accounts;
 
     private final TransactionMapper mapper = new TransactionMapper();
 
-    private static Retrofit retrofit;
-
     private static BuxferAPI service;
 
     public BuxferService() {
 
-        retrofit = new Retrofit.Builder()
+        //.addInterceptor(logging)
+        // Request customization: add request headers
+        Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(API_BASE_URL)
                 .addConverterFactory(GsonConverterFactory.create())
                 .client(new OkHttpClient.Builder()
@@ -71,6 +68,9 @@ public class BuxferService {
     private String getToken() {
 
         try {
+
+            String username = "cspeare81@googlemail.com";
+            String password = "A9Y4EheKr3Yn";
 
             Call<BuxferTokenResponse> callSync = service.getToken(username, password);
             Response<BuxferTokenResponse> response = callSync.execute();
@@ -202,6 +202,30 @@ public class BuxferService {
         }
 
         return null;
+
+    }
+
+    public void clearTransaction(BuxferTransaction transaction, String date) {
+
+        try {
+
+            Call<ClearBuxferTransactionResponse> callSync;
+
+            callSync = service.editTransaction(
+                transaction.getId(),
+                date,
+                "cleared"
+            );
+
+
+            Response<ClearBuxferTransactionResponse> response = callSync.execute();
+            assert response.body() != null;
+
+        } catch (Exception ex) {
+
+            System.err.println(ex);
+        }
+
 
     }
 

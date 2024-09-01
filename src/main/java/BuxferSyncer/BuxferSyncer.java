@@ -2,6 +2,7 @@ package BuxferSyncer;
 
 import BuxferSyncer.Buxfer.BuxferService;
 import BuxferSyncer.Buxfer.NewTransaction.NewBuxferTransaction;
+import BuxferSyncer.Buxfer.Transaction.BuxferTransaction;
 import BuxferSyncer.Halifax.HalifaxReader;
 import BuxferSyncer.Halifax.TransactionBean;
 import BuxferSyncer.Pojos.Transaction;
@@ -11,16 +12,19 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.text.MessageFormat;
+import java.util.stream.Collectors;
 
 public class BuxferSyncer {
 
     private final BuxferService buxferService;
 
     private final TransactionMapper mapper = new TransactionMapper();
+
+    private ArrayList<BuxferTransaction> pendingTransactions;
 
     public BuxferSyncer() throws URISyntaxException {
 
@@ -59,10 +63,36 @@ public class BuxferSyncer {
 
     }
 
+    private BuxferTransaction getLastClearedTransaction() {
+
+        LocalDate currentDate = LocalDate.now();
+        LocalDate lastTransactionDate = currentDate.minusMonths(6);
+
+        ArrayList<BuxferTransaction> lastTransactions = buxferService.getClearedTransactions(
+            "Halifax",
+            lastTransactionDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        );
+
+        return lastTransactions.get(0);
+
+    }
+
+    public void populatePendingTransactions() {
+
+        BuxferTransaction lastClearedTransaction = getLastClearedTransaction();
+        LocalDate transactionDate = LocalDate.parse(lastClearedTransaction.getDate());
+
+        pendingTransactions = buxferService.getPendingTransactions(
+            "Halifax",
+            transactionDate.minusDays(7).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        );
+
+        Collections.reverse(pendingTransactions);
+
+    }
+
     public void processHalifaxTransactions() throws URISyntaxException {
 
-        Double buxferBalance = buxferService.getAccount("Halifax").getBalance();
-        Boolean processTransaction = false;
         ArrayList<NewBuxferTransaction> addedTransactions = new ArrayList<>();
 
         URL url = BuxferSyncer.class.getClassLoader().getResource("LatestHalifax.csv");
@@ -73,43 +103,97 @@ public class BuxferSyncer {
 
         Collections.reverse(transactions);
 
-        for (TransactionBean transaction : transactions) {
+        LinkedHashMap<String, List<TransactionBean>> groupedByDate = transactions.stream()
+            .collect(Collectors.groupingBy(
+                TransactionBean::getDate,
+                LinkedHashMap::new,        // Use HashMap as the desired map implementation
+                Collectors.toList()  // Collect the elements into a list
+            )
+        );
 
-            if (Precision.equals(transaction.getBalance(), buxferBalance)) {
+        BuxferTransaction lastTransaction = getLastClearedTransaction();
+        LocalDate lastTransactionDate = LocalDate.parse(lastTransaction.getDate());
 
-                processTransaction = true;
-                continue;
+        for (String date : groupedByDate.keySet()) {
 
-            }
+            LocalDate groupedDate = LocalDate.parse(date);
 
-            if (processTransaction) {
+            if (groupedDate.isAfter(lastTransactionDate)) {
 
-                System.out.println(MessageFormat.format(
-                        "Processing transaction {0} on {1}",
-                        transaction.getDescription(),
-                        transaction.getDate()
-                ));
+                List<TransactionBean> dailyTransactions = groupedByDate.get(date);
 
-                addedTransactions.add(buxferService.addTransaction(transaction));
+                System.out.println(MessageFormat.format("Processing transactions for {0}", date));
+
+                for (TransactionBean transaction : dailyTransactions) {
+
+                    System.out.print(MessageFormat.format(
+                            "\tProcessing {0} on {1}",
+                            transaction.getDescription(),
+                            transaction.getDate()
+                    ));
+
+                    boolean transactionUpdated = false;
+
+                    // Check if there's a pending transaction which matches this transaction
+                    if (!pendingTransactions.isEmpty()) {
+
+                        BuxferTransaction pendingTransaction = pendingTransactions
+                                .stream()
+                                .filter(t -> {
+                                    LocalDate pendingDate = LocalDate.parse(t.getDate());
+                                    LocalDate transactionDate = LocalDate.parse(transaction.getDate());
+
+                                    return (
+                                            Objects.equals(t.getAmount(), transaction.getDebitAmount()) &&
+                                                    transactionDate.isAfter(pendingDate)
+                                    );
+                                })
+                                .findFirst()
+                                .orElse(null);
+
+                        if (pendingTransaction != null) {
+
+                            transactionUpdated = true;
+                            pendingTransactions.remove(pendingTransaction);
+
+                            buxferService.clearTransaction(pendingTransaction, transaction.getDate());
+                            System.out.println(" - converted pending to cleared");
+
+
+                        }
+
+                    }
+
+                    if (!transactionUpdated) {
+
+                        addedTransactions.add(buxferService.addTransaction(transaction));
+                        System.out.println(" - added");
+
+                    }
+
+                }
 
                 buxferService.refreshAccounts();
-                buxferBalance = buxferService.getAccount("Halifax").getBalance();
 
-                if (!Precision.equals(transaction.getBalance(), buxferBalance)) {
+                Double buxferBalance = buxferService.getAccount("Halifax").getBalance();
 
-                    Transaction badMapping = mapper.getTransaction(transaction);
+                double closingDayBalance = dailyTransactions.get(dailyTransactions.size() - 1).getBalance();
+
+                if (!Precision.equals(closingDayBalance, buxferBalance)) {
 
                     System.err.println(MessageFormat.format(
-                            "Balance mismatch - {0} - expected {1}, returned {2}",
-                            transaction.getDescription(),
-                            transaction.getBalance(),
+                            "Balance incorrect on {0} - expected {1}, returned {2}",
+                            date,
+                            closingDayBalance,
                             buxferBalance
                     ));
 
-                    addedTransactions.forEach(t -> buxferService.deleteTransaction(t.getId()));
+                    //addedTransactions.forEach(t -> buxferService.deleteTransaction(t.getId()));
                     break;
 
                 }
+
+                System.out.println();
 
             }
 
@@ -117,12 +201,13 @@ public class BuxferSyncer {
 
     }
 
-    public static void main (String[] args) throws URISyntaxException, IOException {
+    public static void main (String[] args) throws URISyntaxException {
 
         BuxferSyncer syncer = new BuxferSyncer();
 
         if (syncer.validateMappings()) {
 
+            syncer.populatePendingTransactions();
             syncer.processHalifaxTransactions();
 
         }

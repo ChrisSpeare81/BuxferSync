@@ -2,6 +2,7 @@ package BuxferSyncer.Buxfer;
 
 import BuxferSyncer.Buxfer.Account.BuxferAccountResponse;
 import BuxferSyncer.Buxfer.DeleteTransaction.DeleteTransactionResponse;
+import BuxferSyncer.Buxfer.ClearTransaction.ClearBuxferTransactionResponse;
 import BuxferSyncer.Buxfer.NewTransaction.NewBuxferTransactionResponse;
 import BuxferSyncer.Buxfer.Token.BuxferTokenResponse;
 import BuxferSyncer.Buxfer.Transaction.BuxferTransactionResponse;
@@ -47,6 +48,13 @@ public interface BuxferAPI {
             @Query(value = "date") String date,
             @Query(value = "type") String type,
             @Query(value = "tags") String tags,
+            @Query(value = "status") String status
+    );
+
+    @POST("transaction_edit")
+    Call<ClearBuxferTransactionResponse> editTransaction(
+            @Query(value = "id") Integer id,
+            @Query(value = "date") String date,
             @Query(value = "status") String status
     );
 
